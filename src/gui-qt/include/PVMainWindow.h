@@ -1,0 +1,286 @@
+/* * MIT License
+ *
+ * © ESI Group, 2015
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ *
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ *
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#ifndef PVMAINWINDOW_H
+#define PVMAINWINDOW_H
+
+#include <QMainWindow>
+
+#include <QFile>
+#include <QStackedWidget>
+
+#include <pvkernel/core/PVArgument.h>
+#include <pvkernel/core/PVMeanValue.h>
+#include <pvkernel/core/PVDBusConnection.h>
+
+#include <pvkernel/rush/PVInput.h>
+#include <pvkernel/rush/PVSourceCreator.h>
+#include <pvkernel/rush/PVSourceCreatorFactory.h>
+#include <pvkernel/widgets/PVFileDialog.h>
+
+
+#include <squey/PVSelection.h>
+
+#include <pvguiqt/PVProjectsTabWidget.h>
+#include <pvguiqt/PVAboutBoxDialog.h>
+
+
+#include <PVFilesTypesSelWidget.h>
+
+#include <tbb/global_control.h>
+
+QT_BEGIN_NAMESPACE
+class QAction;
+class QMenu;
+class QPlainTextEdit;
+QT_END_NAMESPACE
+
+namespace PVCore
+{
+class PVSerializeArchive;
+} // namespace PVCore
+
+namespace PVGuiQt
+{
+class PVSourceWorkspace;
+class PVAboutBoxDialog;
+class PVExportSelectionDlg;
+} // namespace PVGuiQt
+
+namespace App
+{
+
+class PVMainWindow;
+class PVStartScreenWidget;
+
+/**
+ * \class PVMainWindow
+ */
+class PVMainWindow : public QMainWindow
+{
+	Q_OBJECT
+
+	friend class PVStartScreenWidget;
+
+  public:
+	PVMainWindow(QWidget* parent = 0);
+	~PVMainWindow() override;
+
+	PVGuiQt::PVProjectsTabWidget* _projects_tab_widget;
+
+	QMenuBar* menubar;
+
+	char* last_sendername;
+	bool report_started;
+	int report_image_index;
+	QString* report_filename;
+
+	Squey::PVView* current_view() { return get_root().current_view(); }
+	Squey::PVView const* current_view() const { return get_root().current_view(); }
+
+	Squey::PVScene* current_scene() { return get_root().current_scene(); }
+	Squey::PVScene const* current_scene() const { return get_root().current_scene(); }
+
+	void move_selection_to_new_layer(Squey::PVView* view);
+	void commit_selection_to_new_layer(Squey::PVView* view);
+	void set_color(Squey::PVView* view);
+
+	void import_type(PVRush::PVInputType_p in_t);
+	void import_type(PVRush::PVInputType_p in_t,
+	                 PVRush::PVInputType::list_inputs const& inputs,
+	                 PVRush::hash_formats& formats,
+	                 PVRush::hash_format_creator& format_creator,
+	                 QString const& choosenFormat,
+					 bool concatenation = false);
+	/* void import_type(); */
+
+	QString get_solution_path() const { return get_root().get_path(); }
+
+	void set_window_title_with_filename();
+
+	bool maybe_save_solution();
+
+  protected:
+	void remove_source(Squey::PVSource* src_p);
+
+  protected:
+	bool event(QEvent* event) override;
+
+  public Q_SLOTS:
+  	void load_files(QStringList const& files, QString format = "");
+	void about_Slot(PVGuiQt::PVAboutBoxDialog::Tab tab);
+	void commit_selection_to_new_layer_Slot();
+	void move_selection_to_new_layer_Slot();
+	void selection_set_from_current_layer_Slot();
+	void selection_set_from_layer_Slot();
+	void export_selection_Slot();
+
+	void new_format_Slot();
+	void cur_format_Slot();
+	void edit_format_Slot(const QString& format);
+	void open_format_Slot();
+	void import_type_default_Slot();
+	void import_type_Slot();
+	void import_type_Slot(const QString& itype);
+	void load_sample_dataset_Slot();
+	void events_display_unselected_zombies_parallelview_Slot();
+	bool load_source_from_description_Slot(PVRush::PVSourceDescription);
+	void quit_Slot();
+	void selection_all_Slot();
+	void selection_inverse_Slot();
+	void selection_none_Slot();
+	void set_color_Slot();
+	void view_display_inv_elts_Slot();
+	void get_screenshot_widget();
+	QScreen* get_screen() const;
+	void get_screenshot_window();
+	void get_screenshot_desktop();
+	// Called by input_type plugins to edit a format.
+	// Not an elegant solution, must find better.
+	void edit_format_Slot(QString const& path, QWidget* parent);
+	void edit_format_Slot(QDomDocument& doc, QWidget* parent);
+	void axes_combination_editor_Slot();
+
+	void solution_new_Slot();
+	void solution_load_Slot();
+	void solution_save_Slot();
+	void solution_saveas_Slot();
+
+	void close_solution_Slot();
+
+  protected:
+	void closeEvent(QCloseEvent* event) override;
+
+  private:
+	void display_inv_elts();
+
+	void save_screenshot(const QPixmap& pixmap, const QString& title, const QString& name);
+
+  private Q_SLOTS:
+	void root_modified();
+	bool load_solution(QString const& file);
+	void load_solution_and_create_mw(QString const& file);
+	void menu_activate_is_file_opened(bool cond);
+
+  private:
+	/*! \brief Path to the sample shipped with the application.
+	 *
+	 * Empty when it is not there, which is what a build run without being
+	 * installed looks like.
+	 */
+	QString sample_dataset_path() const;
+
+	/*! \brief Offer the shipped sample as a recent source, on a first run.
+	 */
+	void register_sample_dataset();
+
+	void connect_actions();
+	void create_actions();
+	void create_menus();
+	void create_actions_import_types(QMenu* menu);
+
+  private:
+	bool load_source(Squey::PVSource* src, bool update_recent_items = true);
+	void source_loaded(Squey::PVSource& src, bool update_recent_items);
+	void flag_investigation_as_cached(const QString& file);
+
+  private:
+	QMenu* file_Menu;
+	QMenu* selection_Menu;
+	QMenu* events_Menu;
+	QMenu* settings_Menu;
+	QMenu* help_Menu;
+
+	QAction* about_Action;
+	QAction* refman_Action;
+	QAction* sample_dataset_Action;
+	QAction* commit_selection_to_new_layer_Action;
+	QAction* move_selection_to_new_layer_Action;
+	QAction* filter_reprocess_last_filter;
+	QAction* solution_new_Action;
+	QAction* solution_load_Action;
+	QAction* solution_save_Action;
+	QAction* solution_saveas_Action;
+	QAction* export_selection_Action;
+	QAction* new_file_Action;
+	QAction* new_scene_Action;
+	QAction* quit_Action;
+	QAction* select_scene_Action;
+	QAction* selection_all_Action;
+	QAction* selection_inverse_Action;
+	QAction* selection_none_Action;
+	QAction* selection_from_current_layer_Action;
+	QAction* selection_from_layer_Action;
+	QAction* set_color_Action;
+	QAction* tools_new_format_Action;
+	QAction* tools_open_format_Action;
+	QAction* tools_cur_format_Action;
+	QAction* view_Action;
+	QAction* view_display_inv_elts_Action;
+	QAction* settings_dark_theme_Action;
+	QAction* settings_light_theme_Action;
+	QAction* settings_follow_system_theme_Action;
+
+	QSpacerItem* pv_mainSpacerTop;
+	QSpacerItem* pv_mainSpacerBottom;
+	QWidget* pv_centralMainWidget;
+	QStackedWidget* pv_centralWidget;
+	QVBoxLayout* pv_mainLayout;
+	QVBoxLayout* pv_startLayout;
+	PVWidgets::PVFileDialog _load_solution_dlg;
+
+	QString _current_save_root_folder;
+
+  protected:
+	void treat_invalid_formats(QHash<QString, std::pair<QString, QString>> const& errors);
+
+  public:
+	Squey::PVRoot& get_root();
+	Squey::PVRoot const& get_root() const;
+
+  private:
+	static PVMainWindow* find_main_window(const QString& path);
+	bool is_solution_untitled() const { return get_solution_path().isEmpty(); }
+	void save_solution(QString const& file, bool save_log_file = false);
+	void reset_root();
+	void close_solution();
+
+  Q_SIGNALS:
+	void change_of_current_view_Signal();
+	void filter_applied_Signal();
+	void zombie_mode_changed_Signal();
+
+  private:
+	QString _cur_project_file;
+	Squey::PVRoot _root;
+#ifdef __linux__
+	PVCore::PVDBusConnection _dbus_connection;
+#endif
+
+  private:
+	QString _screenshot_root_dir;
+};
+} // namespace App
+
+#endif // PVMAINWINDOW_H
