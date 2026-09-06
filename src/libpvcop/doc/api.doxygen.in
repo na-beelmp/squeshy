@@ -1,0 +1,16 @@
+PROJECT_NAME = "PVCop public API documentation"
+
+INPUT             = @PROJECT_SOURCE_DIR@/include/pvcop
+INPUT            += @PROJECT_SOURCE_DIR@/include/pvcop/core
+INPUT            += @PROJECT_SOURCE_DIR@/include/pvcop/db
+INPUT            += @PROJECT_SOURCE_DIR@/include/pvcop/types
+INPUT            += @PROJECT_SOURCE_DIR@/include/pvcop/types/formatter
+
+OUTPUT_DIRECTORY = @CMAKE_CURRENT_BINARY_DIR@/api
+
+FULL_PATH_NAMES  = NO
+EXTRACT_ALL      = YES
+
+GENERATE_HTML  = YES
+GENERATE_LATEX = NO
+GENERATE_MAN   = NO

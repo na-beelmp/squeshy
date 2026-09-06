@@ -1,0 +1,25 @@
+# @file
+#
+#
+
+###############################################################################
+# Define build type (default to release)
+###############################################################################
+set(CMAKE_CONFIGURATION_TYPES debug release relwithdebinfo)
+
+# Default build type is debug
+if (NOT DEFINED CMAKE_BUILD_TYPE)
+	message(STATUS "No build type selected, default to 'release'")
+	set(CMAKE_BUILD_TYPE "release")
+elseif(CMAKE_BUILD_TYPE STREQUAL "")
+	message(STATUS "No build type selected, default to 'release'")
+	set(CMAKE_BUILD_TYPE "release")
+endif()
+
+###############################################################################
+# Define index identifier size (default to 32 bits)
+###############################################################################
+option(INDEXES_64BITS "INDEXES_64BITS" 0)
+if(INDEXES_64BITS)
+    add_definitions(-DINDEXES_64BITS)
+endif(INDEXES_64BITS)

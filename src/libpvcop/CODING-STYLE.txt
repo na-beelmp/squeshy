@@ -1,0 +1,305 @@
+
+##############################################################################
+# Identifiers
+
+Pre-processing ones are upper case.
+
+For #ifndef/#define/#endif block, the identifier is shaped as follows:
+
+__PROJECT_EACH_NAMESPACE_NAMES_UNITNAME_H__
+
+little example:
+
+-- cut --
+#ifndef __MYPROJECT_PRJ_CLASSA_H__
+#define __MYPROJECT_PRJ_CLASSA_H__
+
+...
+
+#endif // __MYPROJECT_PRJ_CLASSA_H__
+-- cut --
+
+
+Template parameter names are upper camel case. If there is only one parameter,
+using only letter is accepted (the name's initial letter) only if it is
+explicit (like T for Type).
+
+All others one are lower case: variables, classes, structs, namespaces,
+fonctions, and methods.
+
+Class member variables are prefixed with an '_'.
+
+When using typedef to shorter a complex or a long typing type name, the
+identifier must be suffixed with "_t".
+
+When using typedef to shorter a function signature, the identifier must be
+suffixed with "_f".
+
+
+##############################################################################
+# Variables
+
+Their names must express their usage and not their implementation type.
+
+i, j, k can only be used as loop indexes.
+
+
+Variables must be well-typed and portables: no "unsigned" when "size_t" is
+required, etc.
+
+
+Define variables only in the scopes where they are used.
+
+
+For type cast, prefer C++ type casting instead of C casting; see
+http://en.cppreference.com/w/cpp/language/explicit_cast
+
+
+##############################################################################
+# Headers inclusion
+
+At most 4 inclusion blocks separated by one empty line:
+- private headers
+- public headers
+- C++ headers
+- C headers
+
+
+##############################################################################
+# Namespace scopes
+
+An example is better than a sentence O:-)
+
+example:
+
+-- cut --
+
+namespace a
+{
+
+namespace b
+{
+
+...
+
+} // namespace a::b
+
+} // namespace a
+
+-- cut --
+
+
+##############################################################################
+# Structure scopes
+
+An example is better than a sentence O:-)
+
+-- cut --
+struct name
+{
+[tab]type[space+]name;
+[tab]type[space+]name;
+[tab]type[space+]name;
+[tab]type[space+]name;
+
+[tab]name(...)
+[tab]{
+[tab][tab]...
+[tab]}
+};
+-- cut --
+
+
+##############################################################################
+# Classe scopes
+
+-- cut --
+class name : inheritance
+{
+[tab]friend;
+
+[tab]private types;
+
+public:
+[tab]public types;
+
+public:
+[tab]constexpr;
+
+public:
+[tab]constructors;
+[tab]destructor;
+
+public:
+[tab]access; // if required
+
+public:
+[tab]iterators; // if required
+
+public:
+[tab]methods;
+
+protected:
+[tab]...;
+
+private:
+[tab]...;
+};
+-- cut --
+
+
+##############################################################################
+# Indentation
+
+Tabs to indent and spaces to align.
+
+For argument list on many line, There are 2 accepted ways:
+
+1/ all argument on the function/method's line
+
+2/ only one argument per line
+
+Note: pour la présentation... comment dire... c'est la war man !
+
+
+##############################################################################
+# Semantic structures
+
+An example is better than a sentence O:-)
+
+-- cut --
+if (expr) {
+[tab]statements;
+} else {
+[tab]statements;
+}
+
+for (type var = init; var < limit; ++var) {
+[tab]statements;
+}
+
+while (expr) {
+[tab]statements;
+}
+
+do {
+[tab]statements;
+} while (expr);
+
+switch (expr) {
+case A:
+[tab]statement;
+case B: {
+[tab]statement;
+}
+default:
+[tab]statement;
+}
+
+var = function(param1, param2, param3);
+-- cut --
+
+
+##############################################################################
+# Comments
+
+A comment is placed just before its code and must not be a simple rewrite of
+its code.
+
+A comment about the implementation detail of a class/method/structure/function
+is placed after its first '{' and before anything else.
+
+For long function/method, short comments can be added to delimit the different
+steps of the implementation.
+
+Two way for single line comment:
+
+C++ style:
+
+-- cut --
+// single line comment with some text
+var = long_statement_with_lots_of_variables_constants_or_whatever
+-- cut --
+
+and C style:
+
+-- cut --
+/* single line comment with some text
+ */
+var = long_statement_with_lots_of_variables_constants_or_whatever
+-- cut --
+
+For multiline comments too:
+
+C++ style:
+
+-- cut --
+// comment with some text which
+// will be
+// on more than
+// one line
+var = long_statement_with_lots_of_variables_constants_or_whatever
+-- cut --
+
+and C style:
+
+-- cut --
+/* single line comment with some text
+ * will be
+ * on more than
+ * one line
+ */
+var = long_statement_with_lots_of_variables_constants_or_whatever
+-- cut --
+
+To separate methods, functions or local definitions in a .cpp file, a comment
+block must be used:
+
+-- cut --
+...
+
+/*****************************************************************************
+ * What come next...
+ *****************************************************************************/
+
+...
+-- cut --
+
+
+##############################################################################
+# Doxygen comments
+
+A Doxygen comment must be simple and not ambiguous.
+
+An example is better than a sentence O:-)
+
+For each file:
+
+-- cut --
+/**
+ * @file
+ *
+ */
+-- cut --
+
+For public classes/structures/functions/methods/wathever
+
+-- cut --
+/**
+ * summary
+ *
+ * long text (if the summary is not enough)
+ *
+ * @param... (if mandatory)
+ * ...
+ *
+ * @return (if mandatory)
+ *
+ * @note (if needed)
+ *
+ * @todo (if needed)
+ */
+-- cut --
+
+for more information, see http://www.stack.nl/~dimitri/doxygen/manual/index.html
+

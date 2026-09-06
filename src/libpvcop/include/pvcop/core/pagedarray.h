@@ -1,0 +1,59 @@
+/* * MIT License
+ *
+ * © ESI Group, 2015
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ *
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ *
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#ifndef __PVCOP_CORE_PAGEDARRAY_H__
+#define __PVCOP_CORE_PAGEDARRAY_H__
+
+#include <pvcop/core/array.h>
+#include <pvcop/core/mempage.h>
+
+namespace pvcop
+{
+
+namespace core
+{
+
+template <typename T>
+class pagedarray : public array<T>
+{
+	using __type_traits = __impl::type_traits<T>;
+	using array_t = array<T>;
+
+  public:
+	using value_type = typename __type_traits::value_type;
+
+  public:
+	/**
+	 * Default constructor
+	 */
+	explicit pagedarray(const mempage& page)
+	{
+		array_t::_data = static_cast<value_type*>(page.base());
+		array_t::_size = page.size();
+	}
+};
+}
+}
+
+#endif // __PVCOP_CORE_PAGEDARRAY_H__

@@ -1,0 +1,4 @@
+declare_test(pvcop_formatter_desc_list formatter_desc_list.cpp)
+declare_test(pvcop_invalid_values invalid_values.cpp third_party/csvreader/csvreader.cpp)
+declare_test(pvcop_invalid_values_concurrent invalid_values_concurrent.cpp)
+declare_test(pvcop_long_fields long_fields.cpp third_party/csvreader/csvreader.cpp)

@@ -1,0 +1,241 @@
+/* * MIT License
+ *
+ * © ESI Group, 2015
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ *
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ *
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#ifndef __PVSCATTERVIEW_H__
+#define __PVSCATTERVIEW_H__
+
+#include <squey/PVAxesCombination.h>
+
+#include <pvparallelview/common.h>
+#include <pvparallelview/PVZonesManager.h>
+#include <pvparallelview/PVScatterViewBackend.h>
+#include <pvparallelview/PVZoomableDrawingAreaWithAxes.h>
+#include <pvparallelview/PVZoomConverterScaledPowerOfTwo.h>
+#include <pvparallelview/PVZoneRendering_types.h>
+
+#include <pvkernel/widgets/PVMouseButtonsLegend.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <sigc++/sigc++.h>
+
+#include <memory>
+#include <unordered_set>
+
+class QPainter;
+
+namespace PVWidgets
+{
+
+class PVHelpWidget;
+} // namespace PVWidgets
+
+namespace Squey
+{
+
+class PVView;
+} // namespace Squey
+
+namespace PVParallelView
+{
+
+class PVViewRenderingContext;
+class PVZoneTree;
+class PVZoomedZoneTree;
+class PVZonesManager;
+class PVZoomConverter;
+class PVScatterViewParamsWidget;
+class PVScatterViewInteractor;
+class PVScatterViewSelectionRectangle;
+class PVSelectionRectangleInteractor;
+
+class PVScatterView : public PVZoomableDrawingAreaWithAxes, public sigc::trackable
+{
+	Q_OBJECT;
+
+	friend PVScatterViewInteractor;
+	friend PVScatterViewParamsWidget;
+
+	constexpr static int zoom_steps = 5;
+
+	// the "digital" zoom level (to space consecutive values)
+	constexpr static int zoom_extra_level = 0;
+	constexpr static int zoom_extra = zoom_extra_level * zoom_steps;
+	// -22 because we want a scale factor of 1 when the view fits in a 1024x1024 window.
+	// This is also the coarsest image the backend can render (the quadtree root image),
+	// so the view opens at this level.
+	constexpr static int zoom_min = -22 * zoom_steps;
+	// Furthest zoom-out allowed (lower bound of the visual zoom range). Below zoom_min
+	// the backend image is no longer re-rendered (see the guard in do_update_all()): the
+	// quadtree root image is simply scaled down, which lets the user pull back for more
+	// context. -27 shrinks the whole 2^32 scene down to 2^(32-27) = 32 pixels.
+	constexpr static int zoom_out_limit = -27 * zoom_steps;
+
+	/*! \brief This class represent an image that has been rendered, with its
+	 * associated scene and viewport rect.
+	 */
+	class RenderedImage : boost::noncopyable
+	{
+	  public:
+		/*! \brief Swap the stored image with a new rendered one.
+		 */
+		void swap(QImage const& img, QRectF const& viewport_rect, QTransform const& mv2s);
+
+		/*! \brief Draw the image thanks to \a painter.
+		 *
+		 * This function assumes that \a painter uses the margined viewport coordinate system.
+		 */
+		void draw(PVGraphicsView* view, QPainter* painter);
+
+		/*! \brief Update the placement transformation without swapping the image.
+		 *
+		 * Used when zooming out below zoom_min: the (already complete) root image is kept
+		 * but must be re-projected at the current scale on every frame.
+		 */
+		void set_mv2s(QTransform const& mv2s) { _mv2s = mv2s; }
+
+	  private:
+		QImage _img;
+		QTransform _mv2s; // margined viewport to scene image transformation
+	};
+
+  public:
+	using backend_unique_ptr_t = std::unique_ptr<PVScatterViewBackend>;
+
+	PVScatterView(Squey::PVView& pvview_sp,
+	              PVViewRenderingContext& context,
+	              PVZoneID const zone_id,
+	              QWidget* parent = nullptr);
+	~PVScatterView() override;
+
+  public:
+	void update_new_selection_async();
+	void update_all_async();
+
+	inline Squey::PVView& lib_view() { return _view; }
+	inline Squey::PVView const& lib_view() const { return _view; }
+
+	PVZoneID get_zone_id() const { return _zone_id; }
+
+	void set_enabled(bool en);
+
+  public:
+	static void toggle_show_quadtrees() { _show_quadtrees = !_show_quadtrees; }
+
+  public:
+	PVScatterViewSelectionRectangle* get_selection_rect() const { return _sel_rect.get(); }
+
+  protected:
+	void drawBackground(QPainter* painter, const QRectF& rect) override;
+	void enterEvent(QEnterEvent* event) override;
+	void leaveEvent(QEvent*) override;
+	void keyPressEvent(QKeyEvent* event) override;
+	void keyReleaseEvent(QKeyEvent* event) override;
+	QString get_x_value_at(const qint64 value) override;
+	QString get_y_value_at(const qint64 value) override;
+
+  protected:
+	void update_window_title();
+	void set_params_widget_position();
+
+	PVWidgets::PVHelpWidget* help_widget() { return _help_widget; }
+
+	bool show_bg() const { return _show_bg; }
+	bool show_labels() const { return _show_labels; }
+
+  Q_SIGNALS:
+	void set_status_bar_mouse_legend(PVWidgets::PVMouseButtonsLegend legend);
+	void clear_status_bar_mouse_legend();
+
+  public Q_SLOTS:
+	void do_update_all();
+	void update_all();
+	void update_sel();
+
+	void update_img_bg(PVParallelView::PVZoneRendering_p zr, PVZoneID zid);
+	void update_img_sel(PVParallelView::PVZoneRendering_p zr, PVZoneID zid);
+
+	void toggle_unselected_zombie_visibility();
+	void toggle_show_labels();
+
+  private:
+	backend_unique_ptr_t create_backend(PVZoneID zone_id);
+
+	// Rendering-context (PVViewRenderingContext) signal handlers
+	void on_axes_combination_changed(bool async);
+	void on_zones_about_to_be_updated(std::unordered_set<PVZoneID> const& zones);
+	void on_zones_updated(std::unordered_set<PVZoneID> const& zones);
+	void on_view_about_to_be_deleted();
+	void on_context_about_to_be_deleted();
+
+	void update_labels_cache();
+
+	PVZoneTree const& get_zone_tree() const;
+	void set_scatter_view_zone(PVZoneID const zid);
+
+	PVScatterViewParamsWidget* params_widget() { return _params_widget; }
+
+  private Q_SLOTS:
+	void do_zoom_change(int axes);
+	void do_pan_change();
+
+  private:
+	Squey::PVView& _view;
+	PVViewRenderingContext* _context;
+	backend_unique_ptr_t _backend;
+
+	// set between zones_about_to_be_updated and zones_updated when the
+	// displayed zone is part of the rebuilt set
+	bool _zones_update_pending = false;
+
+	std::unique_ptr<PVZoomConverterScaledPowerOfTwo<zoom_steps>> _zoom_converter;
+
+	std::unique_ptr<PVZoomableDrawingAreaInteractor> _h_interactor;
+	std::unique_ptr<PVZoomableDrawingAreaInteractor> _sv_interactor;
+
+	std::unique_ptr<PVScatterViewSelectionRectangle> _sel_rect;
+	std::unique_ptr<PVSelectionRectangleInteractor> _sel_rect_interactor;
+
+	static bool _show_quadtrees;
+
+	RenderedImage _image_sel;
+	RenderedImage _image_bg;
+
+	QRectF _last_image_margined_viewport;
+	QTransform _last_image_mv2s;
+
+	PVZoneID _zone_id;
+
+	PVScatterViewParamsWidget* _params_widget;
+	PVWidgets::PVHelpWidget* _help_widget;
+
+	bool _show_bg;
+	bool _show_labels;
+
+	PVWidgets::PVMouseButtonsLegend _mouse_buttons_current_legend;
+	PVWidgets::PVMouseButtonsLegend _mouse_buttons_default_legend;
+};
+} // namespace PVParallelView
+
+#endif // __PVSCATTERVIEW_H__

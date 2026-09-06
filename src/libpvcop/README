@@ -1,0 +1,20 @@
+libpvcop
+========
+
+Dependencies
+~~~~~~~~~~~~
+
+Pvcop need tcmalloc to work efficiently on memory allocation :
+
+        $> sudo apt-get install libgoogle-perftools-dev
+
+Installation
+~~~~~~~~~~~~
+
+Installation is as simple as :
+
+        $> mkdir build
+        $> cd build
+        $> cmake ..
+        $> make
+        $> make install

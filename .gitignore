@@ -1,0 +1,66 @@
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build Artifacts & Binaries
+build/
+build*/
+Makefile
+builds
+squey.sh
+run.sh
+*/tests/bin
+*/tests/*/bin
+.gdb_history
+third-party/*
+buildstream/.venv
+buildstream/flatpak_repo/
+buildstream/repo/
+buildstream/squey_mac/
+buildstream/squey_win/
+buildstream/files/org.squey.Squey.metainfo.xml
+.bst/
+
+# Reports extracted from build sandbox
+/junit.xml
+/code_coverage_report/
+.bst2/
+
+# Code quality analysis reports
+cppcheck.xml
+gl-code-quality-report.json
+code_quality_report/
+
+# Documentation
+collection.qhc
+doxygen_sqlite3.db
+*/doc/html/
+*/doc/tags
+.cproject
+.project
+.settings/
+/external/
+
+# SSH / Keys
+buildstream/sshd/sshd_config*
+buildstream/sshd/ssh_host_dsa_key
+buildstream/sshd/ssh_host_dsa_key.pub
+buildstream/sshd/ssh_host_rsa_key
+buildstream/sshd/ssh_host_rsa_key.pub
+buildstream/sshd/sshd.log*
+buildstream/sshd/sshd.pid*
+
+# IDE Configurations
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/.cmaketools.json
+.idea/
+*.swp
+*.swo
