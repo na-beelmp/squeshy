@@ -1,0 +1,285 @@
+/* * MIT License
+ *
+ * © ESI Group, 2015
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ *
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ *
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#ifndef __PVCRASHREPORTSENDER_H__
+#define __PVCRASHREPORTSENDER_H__
+
+#include "PVCrashReporterToken.h"
+
+#include <memory>
+#include <string>
+
+#include <curl/curl.h>
+
+#include <rapidjson/document.h>
+
+#include <QProcess>
+#include <QString>
+
+#include <pvlogger.h>
+
+#define SEND_CRASH_REPORTS_AS_GITLAB_ISSUES 0
+
+static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp)
+{
+	((std::string*)userp)->append((char*)contents, size * nmemb);
+
+	return size * nmemb;
+}
+
+namespace PVCore
+{
+
+class PVCrashReportSender
+{
+  public:
+	/**
+	 * Post the minidump to the crash server.
+	 *
+	 * Returns 0 on success, the HTTP status when the server refused the report,
+	 * and a negative CURLcode when it could not be reached at all. Whatever went
+	 * wrong is spelled out in error_details, for the reporter to show: a status
+	 * code alone tells the user nothing.
+	 */
+	static int send(const std::string& minidump_path,
+	                const std::string& version,
+	                std::string* error_details = nullptr)
+	{
+		std::unique_ptr<CURL, std::function<void(CURL*)>> curl(
+		    curl_easy_init(), [](CURL* curl) { curl_easy_cleanup(curl); });
+
+		curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 60L);
+		curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_MAX_DEFAULT);
+#ifndef NDEBUG
+		curl_easy_setopt(curl.get(), CURLOPT_VERBOSE, 1L);
+#endif
+
+#if SEND_CRASH_REPORTS_AS_GITLAB_ISSUES
+		constexpr static std::string_view SQUEY_GITLAB_API_ENDPOINT = "https://gitlab.com/api/v4/projects/squey";
+		constexpr static std::string_view SQUEY_GITLAB_API_ISSUES_TITLE = "Crash report";
+
+		std::unique_ptr<curl_slist, std::function<void(curl_slist*)>> headers(
+		    nullptr, [](curl_slist* headers) { curl_slist_free_all(headers); });
+		std::string auth_token_header{std::string("PRIVATE-TOKEN: ").append(SQUEY_CRASH_REPORTER_TOKEN)};
+		curl_slist* headers_list = nullptr;
+		headers_list = curl_slist_append(headers_list, auth_token_header.c_str());
+		headers.reset(headers_list);
+
+		curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
+		curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
+		std::string result;
+		curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &result);
+
+		std::unique_ptr<curl_httppost, std::function<void(curl_httppost*)>> postvars(
+			nullptr, [](curl_httppost* formpost) { curl_formfree(formpost); });
+
+		// Upload crash report
+		const std::string SQUEY_GITLAB_API_UPLOAD_ENDPOINT =
+		    std::string(SQUEY_GITLAB_API_ENDPOINT) + "/uploads";
+		curl_easy_setopt(curl.get(), CURLOPT_URL, SQUEY_GITLAB_API_UPLOAD_ENDPOINT.c_str());
+
+		struct curl_httppost* formpost = nullptr;
+		struct curl_httppost* lastptr = nullptr;
+
+		curl_formadd(&formpost, &lastptr, CURLFORM_COPYNAME, "file", CURLFORM_FILE,
+				minidump_path.c_str(), CURLFORM_END);
+
+		postvars.reset(formpost);
+		curl_easy_setopt(curl.get(), CURLOPT_HTTPPOST, postvars.get());
+
+		/*CURLcode curl_ret =*/ curl_easy_perform(curl.get());
+
+		long http_code = 0;
+		curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+
+		if (http_code != 201) {
+			return http_code;
+		}
+
+		rapidjson::Document json;
+		json.Parse<0>(result.c_str());
+		std::string minidump_link(json["markdown"].GetString());
+
+		// Create Issue
+		const std::string SQUEY_GITLAB_API_ISSUES_ENDPOINT =
+		    std::string(SQUEY_GITLAB_API_ENDPOINT) + "/issues/";
+		curl_easy_setopt(curl.get(), CURLOPT_URL, SQUEY_GITLAB_API_ISSUES_ENDPOINT.c_str());
+
+		std::string description = minidump_link + " (version " + version + ")";
+
+		formpost = nullptr;
+		lastptr = nullptr;
+
+		curl_formadd(&formpost, &lastptr, CURLFORM_COPYNAME, "title", CURLFORM_COPYCONTENTS,
+		             SQUEY_GITLAB_API_ISSUES_TITLE.data(), CURLFORM_END);
+		curl_formadd(&formpost, &lastptr, CURLFORM_COPYNAME, "issue_type", CURLFORM_COPYCONTENTS,
+		             "incident", CURLFORM_END);
+		curl_formadd(&formpost, &lastptr, CURLFORM_COPYNAME, "confidential", CURLFORM_COPYCONTENTS,
+					 "true", CURLFORM_END);
+		curl_formadd(&formpost, &lastptr, CURLFORM_COPYNAME, "labels", CURLFORM_COPYCONTENTS,
+					 "kind::crash", CURLFORM_END);
+		curl_formadd(&formpost, &lastptr, CURLFORM_COPYNAME, "description", CURLFORM_COPYCONTENTS,
+					 description.c_str(), CURLFORM_END);
+					 
+		postvars.reset(formpost);
+		curl_easy_setopt(curl.get(), CURLOPT_HTTPPOST, postvars.get());
+
+		/*CURLcode curl_ret =*/ curl_easy_perform(curl.get());
+
+		http_code = 0;
+		curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+
+		if (http_code == 201) {
+			return 0;
+		} else {
+			return http_code;
+		}
+#else // Send crash reports to bugsplat.com
+		#define SQUEY_BUGSPLAT_DATABASE "squey"
+		#define SQUEY_BUGSPLAT_API_ENDPOINT "https://" SQUEY_BUGSPLAT_DATABASE ".bugsplat.com/post/bp/crash/crashpad.php"
+
+		// Compress minidump file to speed upload. Spawned without a shell so that
+		// the paths cannot be interpreted as commands, and fall back on the raw
+		// minidump when the archiver is missing or fails.
+		std::string uploaded_path(minidump_path);
+		const std::string compressed_minidump_path(minidump_path + ".zip");
+		if (QProcess::execute("zip", {QString::fromStdString(compressed_minidump_path),
+		                              QString::fromStdString(minidump_path)}) == 0) {
+			uploaded_path = compressed_minidump_path;
+		} else {
+			pvlogger::warn() << "Could not compress crash report '" << minidump_path
+			                 << "', uploading it as is" << std::endl;
+		}
+
+#ifdef _WIN32
+		// curl is built against OpenSSL, whose CA store does not exist on
+		// Windows: without this, verifying the certificate of the server fails
+		// and no report is ever uploaded. OpenSSL only honours this on Windows,
+		// so the other platforms need their own answer.
+		curl_easy_setopt(curl.get(), CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+#endif
+
+		// An empty string advertises the encodings curl was actually built with.
+		// Naming them by hand advertised zstd and brotli, which this curl cannot
+		// decode: the server then answered with one of them and the transfer
+		// failed with "Unrecognized or bad HTTP Content or Transfer-Encoding".
+		curl_easy_setopt(curl.get(), CURLOPT_ACCEPT_ENCODING, "");
+		curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
+		std::string result;
+		curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &result);
+
+		curl_easy_setopt(curl.get(), CURLOPT_URL, SQUEY_BUGSPLAT_API_ENDPOINT);
+
+		std::unique_ptr<curl_mime, std::function<void(curl_mime*)>> multipart(
+					curl_mime_init(curl.get()), [](curl_mime* mime) { curl_mime_free(mime); });
+
+		curl_mimepart* part = curl_mime_addpart(multipart.get());
+		curl_mime_name(part, "upload_file_minidump");
+		curl_mime_filedata(part, uploaded_path.c_str());
+
+		part = curl_mime_addpart(multipart.get());
+		curl_mime_name(part, "product");
+		curl_mime_data(part, "Squey", CURL_ZERO_TERMINATED);
+
+		part = curl_mime_addpart(multipart.get());
+		curl_mime_name(part, "version");
+		curl_mime_data(part, version.c_str(), CURL_ZERO_TERMINATED);
+
+		curl_easy_setopt(curl.get(), CURLOPT_MIMEPOST, multipart.get());
+
+
+		// Upload crash report
+		const CURLcode curl_ret = curl_easy_perform(curl.get());
+
+		// A transport that never reached the server leaves the response code at
+		// zero, which used to be returned as a success: the user was told the
+		// report had been sent while it had gone nowhere.
+		if (curl_ret != CURLE_OK) {
+			const std::string reason = curl_easy_strerror(curl_ret);
+			pvlogger::error() << "Could not send the crash report: " << reason << std::endl;
+			if (error_details != nullptr) {
+				*error_details = reason;
+			}
+			return -curl_ret;
+		}
+
+		long http_code = 0;
+		curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+
+		if (http_code == 200) {
+			return 0;
+		} else {
+			pvlogger::error() << "The crash server rejected the report with HTTP status "
+			                  << http_code << std::endl;
+			if (error_details != nullptr) {
+				*error_details = "The server answered with HTTP status " +
+				                 std::to_string(http_code);
+			}
+			return http_code;
+		}
+#endif
+	}
+
+	static bool test_auth()
+	{
+#if SEND_CRASH_REPORTS_AS_GITLAB_ISSUES
+		std::unique_ptr<CURL, std::function<void(CURL*)>> curl(
+		    curl_easy_init(), [](CURL* curl) { curl_easy_cleanup(curl); });
+
+		curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 10L);
+		curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(curl.get(), CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+#ifndef NDEBUG
+		curl_easy_setopt(curl.get(), CURLOPT_VERBOSE, 1L);
+#endif
+
+		std::unique_ptr<curl_slist, std::function<void(curl_slist*)>> headers(
+		    nullptr, [](curl_slist* headers) { curl_slist_free_all(headers); });
+		std::string auth_token_header{std::string("PRIVATE-TOKEN: ").append(SQUEY_CRASH_REPORTER_TOKEN)};
+		curl_slist* headers_list = nullptr;
+		headers_list = curl_slist_append(headers_list, auth_token_header.c_str());
+		headers.reset(headers_list);
+
+		curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
+		curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
+		std::string result;
+		curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &result);
+
+		curl_easy_setopt(curl.get(), CURLOPT_URL, "https://gitlab.com/api/v4/personal_access_tokens");
+
+		/*CURLcode curl_ret =*/ curl_easy_perform(curl.get());
+
+		long http_code = 0;
+		curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &http_code);
+
+		return http_code == 200;
+#else
+		return true;
+#endif
+	}
+};
+} // namespace PVCore
+
+#endif // __PVCRASHREPORTSENDER_H__

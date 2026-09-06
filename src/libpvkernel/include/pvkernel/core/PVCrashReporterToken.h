@@ -1,0 +1,1 @@
+#define SQUEY_CRASH_REPORTER_TOKEN ""
