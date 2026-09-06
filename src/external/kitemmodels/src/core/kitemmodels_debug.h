@@ -1,0 +1,8 @@
+#ifndef KITEMMODELS_DEBUG_H
+#define KITEMMODELS_DEBUG_H
+
+#include <QLoggingCategory>
+
+Q_DECLARE_LOGGING_CATEGORY(KITEMMODELS_LOG)
+
+#endif
