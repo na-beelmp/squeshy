@@ -1,0 +1,90 @@
+#
+# @file
+#
+
+# Default build type is debug
+if (NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
+	set(CMAKE_BUILD_TYPE "debug")
+endif()
+
+string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWER)
+
+# Set default values for capabilities
+if (NOT DEFINED USER_TARGET)
+	set(USER_TARGET "developer")
+endif()
+
+###############################################################################
+# Defined test information (long/short, test file folder)
+###############################################################################
+
+# Default values for tests files root
+if (NOT DEFINED TESTS_FILES_DIR)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		set(TESTS_FILES_DIR "${CMAKE_SOURCE_DIR}/tests/files")
+	else()
+		set(TESTS_FILES_DIR "../../../../../../src/tests/files")
+	endif()
+endif()
+
+# Source tree root as seen by a running test. Cross-compiled tests are built
+# inside the BuildStream sandbox but run on the target machine, where the
+# absolute source path of SQUEY_SOURCE_DIRECTORY does not exist: use a path
+# relative to the test working directory there, like TESTS_FILES_DIR does.
+if (NOT DEFINED TESTS_SOURCE_DIR)
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		set(TESTS_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
+	else()
+		set(TESTS_SOURCE_DIR "../../../../../../src")
+	endif()
+endif()
+
+# Default values for tests kind
+if (DEFINED TESTS_LONG)
+	add_definitions(-DTESTS_LONG)
+endif()
+
+###############################################################################
+# Define customer VS developer mode capacity
+###############################################################################
+
+# Parse options
+if (USER_TARGET STREQUAL "developer")
+	set(SQUEY_DEVELOPER_MODE true)
+	message(STATUS "Picviz mode is developer")
+	add_definitions(-DSQUEY_DEVELOPER_MODE)
+else()
+	set(SQUEY_DEVELOPER_MODE false)
+	add_definitions(-DCUSTOMER_RELEASE)
+	message(STATUS "Picviz mode is customer")
+endif()
+
+###############################################################################
+# Generate build.h
+###############################################################################
+
+set(BUILD_FILE_PATH "${CMAKE_CURRENT_BINARY_DIR}/include/pvbase/build.h")
+configure_file(include/pvbase/build.h.cmake ${BUILD_FILE_PATH})
+add_definitions(-DSQUEY_BUILD_FILE_PATH="${BUILD_FILE_PATH}")
+
+###############################################################################
+# Define email addresses
+###############################################################################
+
+set(EMAIL_ADDRESS_CONTACT "contact@squey.org")
+
+add_definitions(-DEMAIL_ADDRESS_CONTACT="${EMAIL_ADDRESS_CONTACT}")
+
+###############################################################################
+# Compilation speed-up (from-scratch builds, no cache required)
+###############################################################################
+
+# Unity (jumbo) builds: group several source files into a single translation
+# unit so the heavy Qt/Boost/Arrow headers are parsed once per batch instead of
+# once per file.
+OPTION(SQUEY_UNITY_BUILD "Group source files into unity (jumbo) builds to speed up compilation" ON)
+set(SQUEY_UNITY_BUILD_BATCH_SIZE "16" CACHE STRING "Number of source files merged per unity build batch")
+
+# Precompiled headers: pre-parse the heaviest standard/Qt headers once per
+# target and reuse the result for every translation unit.
+OPTION(SQUEY_PCH "Use precompiled headers to speed up compilation" ON)

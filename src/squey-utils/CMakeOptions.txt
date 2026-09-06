@@ -1,0 +1,30 @@
+# @file
+#
+#
+
+###############################################################################
+# Define arch flags (default to native)
+###############################################################################
+
+set(ARCH_TYPE "native" CACHE STRING "Architecture to tell GCC to optimize for (-march)")
+
+###############################################################################
+# Define build type (default to release)
+###############################################################################
+set(CMAKE_CONFIGURATION_TYPES debug release relwithdebinfo)
+
+# Default build type is debug
+if (NOT DEFINED CMAKE_BUILD_TYPE)
+	message(STATUS "No build type selected, default to 'release'")
+	set(CMAKE_BUILD_TYPE "release")
+elseif(CMAKE_BUILD_TYPE STREQUAL "")
+	message(STATUS "No build type selected, default to 'release'")
+	set(CMAKE_BUILD_TYPE "release")
+endif()
+
+###############################################################################
+# Define libraries to compile.
+###############################################################################
+OPTION(WITH_PVLOGGER "Compile PVLogger and distribute it" ON)                           
+OPTION(WITH_PVHWLOC "Compile PVHwloc and distribute it" ON)                           
+OPTION(WITH_SQUEY_UTILS_CORE "Compile core libraries and distribute it" ON)

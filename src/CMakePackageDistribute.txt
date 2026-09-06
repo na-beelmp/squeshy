@@ -1,0 +1,55 @@
+#
+# @file
+#
+
+###############################################################################
+# Define installation path.
+###############################################################################
+# FIXME : We have to use CMAKE_INSTALL_PREFIX to have correct absolute path on plugins
+# but it will make cpack use this same path so we should not generate .deb file with
+# this variable set.
+
+SET(SHARE_RESSOURCES "${CMAKE_INSTALL_PREFIX}/share/squey/squey")
+SET(SQUEY_CONFIG ${SHARE_RESSOURCES})
+SET(PVKERNEL_PLUGIN "${CMAKE_INSTALL_PREFIX}/lib/squey/plugins")
+SET(SQUEY_PLUGIN "${CMAKE_INSTALL_PREFIX}/lib/squey/plugins")
+add_definitions(-DPLUGINS_DISTRIB_DIR="${SQUEY_PLUGIN}")
+
+# Set rpath for custom Qt and TBB
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+add_definitions(-DSQUEY_CONFIG="${SQUEY_CONFIG}")
+
+###############################################################################
+# Define files to install
+###############################################################################
+
+install(FILES "pvconfig.ini" DESTINATION ${SQUEY_CONFIG})
+install(FILES "samples/sample-network-traffic.parquet" DESTINATION ${SHARE_RESSOURCES})
+install(FILES "gui-qt/src/resources/icon.png" DESTINATION share/icons/hicolor/64x64/apps RENAME squey.png)
+install(FILES "CHANGELOG" DESTINATION ${SHARE_RESSOURCES})
+
+# The same files, mirrored into the build tree under the layout they have once
+# installed. A binary run from the build tree finds them there (see
+# PVCore::PVConfig::shared_dir()), so that working on Squey does not require
+# installing it first -- without this, the start screen offers no sample and the
+# about box has no changelog to read.
+foreach(shared_file "pvconfig.ini" "CHANGELOG" "samples/sample-network-traffic.parquet")
+	get_filename_component(shared_file_name "${shared_file}" NAME)
+	# CHANGELOG lives at the repository root; the packaging stages it beside the
+	# sources, so it is found here when building a package and one level up when
+	# building the working tree. A file that is in neither place is skipped rather
+	# than failing the configuration: mirroring these is a convenience for a build
+	# run without being installed, not a requirement to build at all.
+	set(shared_file_path "${CMAKE_CURRENT_SOURCE_DIR}/${shared_file}")
+	if(NOT EXISTS "${shared_file_path}")
+		set(shared_file_path "${CMAKE_CURRENT_SOURCE_DIR}/../${shared_file}")
+	endif()
+	if(EXISTS "${shared_file_path}")
+		configure_file("${shared_file_path}"
+		               "${CMAKE_BINARY_DIR}/share/squey/squey/${shared_file_name}" COPYONLY)
+	endif()
+endforeach()
+
+# doc 
+add_definitions(-DDOC_URL="https://doc.squey.org")

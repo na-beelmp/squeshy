@@ -1,0 +1,175 @@
+#
+# @file
+#
+
+# Allows to develop the application in a Flatpak environment
+include_directories(SYSTEM ${CMAKE_INSTALL_PREFIX}/include)
+link_directories(${CMAKE_INSTALL_PREFIX}/lib)
+
+###############################################################################
+# Define the Qt Core package
+###############################################################################
+ADD_DEFINITIONS(-DQT_SHARED)
+ADD_DEFINITIONS(-DQT_NO_KEYWORDS)
+FIND_PACKAGE(Qt6Core REQUIRED)
+message(STATUS "QtCore include dirs: " ${Qt6Core_INCLUDE_DIR})
+message(STATUS "QtCore include dirs: " ${Qt${QT_MAJOR_VERSION}_INCLUDE_DIRS})
+
+###############################################################################
+# Define the OpenCL runtime
+###############################################################################
+if(APPLE)
+  find_package(OpenCL QUIET)
+  if(OpenCL_FOUND)
+    set(OPENCL_FOUND TRUE)
+    set(OPENCL_LIBRARIES OpenCL::OpenCL)
+  else()
+    find_library(OPENCL_FRAMEWORK OpenCL)
+    if(OPENCL_FRAMEWORK)
+      set(OPENCL_FOUND TRUE)
+      set(OPENCL_LIBRARIES "${OPENCL_FRAMEWORK}")
+    endif()
+  endif()
+else()
+  pkg_check_modules(OPENCL REQUIRED)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(OPENCL_LIBRARIES "/usr/lib/x86_64-linux-gnu/libOpenCL.so")
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(OPENCL_LIBRARIES "${CMAKE_INSTALL_PREFIX}/lib/libOpenCL.dll.a")
+  endif()
+endif()
+
+if(OPENCL_FOUND)
+  message(STATUS "OpenCL runtime libraries: " ${OPENCL_LIBRARIES})
+  add_definitions(-DCL_TARGET_OPENCL_VERSION=120 -DCL_HPP_TARGET_OPENCL_VERSION=120 -DCL_HPP_MINIMUM_OPENCL_VERSION=120)
+
+  find_program(PWGEN_BIN pwgen)
+  if(NOT PWGEN_BIN)
+    message(WARNING "pwgen does not seem to be installed, generating fallback random seeds")
+  endif()
+else()
+  message(FATAL_ERROR "No OpenCL environment found")
+endif()
+
+###############################################################################
+# Define variables for Boost library
+###############################################################################
+
+set(Boost_USE_STATIC_LIBS       OFF)
+set(Boost_USE_MULTITHREADED      ON)
+set(Boost_USE_STATIC_RUNTIME    OFF)
+find_package(Boost 1.49 REQUIRED COMPONENTS thread date_time program_options filesystem)
+add_definitions(-DBOOST_ALL_NO_LIB)
+add_definitions(-DBOOST_ALL_DYN_LINK)
+
+message(STATUS "Boost found: " ${Boost_FOUND})
+message(STATUS "Boost include dirs: " ${Boost_INCLUDEDIR})
+message(STATUS "Boost libraries: " ${Boost_LIBRARIES})
+include_directories(AFTER SYSTEM ${BOOST_INCLUDEDIR})
+
+###############################################################################
+# Check for OpenMP
+###############################################################################
+if (APPLE AND "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+  set(OpenMP_LIBRARIES "/opt/homebrew/opt/libomp/lib/libomp.dylib")
+  add_compile_options(-Xclang -fopenmp)
+  include_directories(SYSTEM /opt/homebrew/opt/libomp/include)
+elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+  set(OpenMP_LIBRARIES "-fopenmp")
+  add_definitions("-fopenmp")
+else()
+  find_package(OpenMP REQUIRED)
+  set(OpenMP_LIBRARIES ${OpenMP_CXX_FLAGS})
+  add_definitions(${OpenMP_CXX_FLAGS})
+endif()
+
+###############################################################################
+# Intel Threading Building Blocks (TBB)
+###############################################################################
+
+find_package(TBB "2021.0" REQUIRED)
+set(TBB_LIBRARIES "TBB::tbb;TBB::tbbmalloc")
+add_definitions(-DTBB_SUPPRESS_DEPRECATED_MESSAGES=1)
+
+###############################################################################
+# Check for rapidjson
+###############################################################################
+find_package(RapidJSON QUIET NAMES RapidJSON rapidjson)
+if (RapidJSON_FOUND)
+  set(RAPIDJSON_FOUND TRUE)
+  set(RAPIDJSON_INCLUDE_DIRS ${RapidJSON_INCLUDE_DIRS} ${RapidJSON_INCLUDE_DIR})
+  message(STATUS " rapidjson include directory: ${RAPIDJSON_INCLUDE_DIRS}")
+else()
+  find_package(rapidjson REQUIRED)
+endif()
+
+########################
+# Needed for libpvrush #
+########################
+
+###############################################################################
+# Check for Archive library
+###############################################################################
+pkg_check_modules(ARCHIVE QUIET libarchive)
+if (NOT ARCHIVE_FOUND)
+  find_package(LibArchive REQUIRED)
+  set(ARCHIVE_LIBRARIES ${LibArchive_LIBRARIES})
+  set(ARCHIVE_INCLUDE_DIRS ${LibArchive_INCLUDE_DIRS})
+endif()
+
+###############################################################################
+# Google Crashpad
+###############################################################################
+find_package(crashpad CONFIG QUIET)
+if (crashpad_FOUND)
+  get_target_property(MINI_CHROMIUM_INCLUDE_DIR crashpad::mini_chromium
+                      INTERFACE_INCLUDE_DIRECTORIES)
+  get_filename_component(CRASHPAD_ROOT_INCLUDE_DIR "${MINI_CHROMIUM_INCLUDE_DIR}" DIRECTORY)
+  set(CRASHPAD_INCLUDE_DIRS ${CRASHPAD_ROOT_INCLUDE_DIR} ${MINI_CHROMIUM_INCLUDE_DIR})
+  set(CRASHPAD_LIBRARIES crashpad::client crashpad::util crashpad::mini_chromium)
+  add_definitions(-DHAVE_CRASHPAD=1)
+  message(STATUS "Google Crashpad libraries: ${CRASHPAD_LIBRARIES}")
+  message(STATUS "Google Crashpad include: ${CRASHPAD_INCLUDE_DIRS}")
+else()
+  message(STATUS "Google Crashpad not found, crash reporting disabled.")
+  set(CRASHPAD_LIBRARIES "")
+  set(CRASHPAD_INCLUDE_DIRS "")
+endif()
+
+###############################################################################
+# IBM ICU
+###############################################################################
+find_package(ICU COMPONENTS data i18n uc REQUIRED)
+
+message(STATUS "ICU found: " ${ICU_FOUND})
+if(ICU_FOUND)
+  message(STATUS "ICU include: ${ICU_INCLUDE}")
+  message(STATUS "ICU libraries: ${ICU_LIBRARY}")
+endif(ICU_FOUND)
+
+###############################################################################
+# Check for CURL
+###############################################################################
+find_package(CURL "7.38.0" REQUIRED)
+
+###############################################################################
+# Check for SIGCPP installation
+###############################################################################
+
+pkg_check_modules(SIGCPP REQUIRED sigc++-3.0)
+
+###############################################################################
+# type_safe library
+###############################################################################
+add_definitions(-DTYPE_SAFE_ENABLE_WRAPPER=0)
+add_definitions(-DTYPE_SAFE_ENABLE_ASSERTIONS=0)
+include_directories(AFTER external/type_safe/external/debug_assert)
+include_directories(AFTER external/type_safe/include)
+
+###############################################################################
+# Python3
+###############################################################################
+find_package(Python REQUIRED COMPONENTS Development)
+include_directories(AFTER SYSTEM ${Python_INCLUDE_DIRS})
+set(PYTHON_SUPPORT ON)
+add_definitions(-DPYTHON_SUPPORT=1)

@@ -1,0 +1,189 @@
+#
+# @file
+#
+
+macro(declare_internal_library libname)
+	string(TOUPPER ${libname} libname_upper)
+	string(TOLOWER ${libname} libname_lower)
+	# Add dev includes and build includes as possible include dir
+	# Build includes are required because of ui_xxx.h generated files
+	# Dev includes are required because they are use before being copy in build directory
+	set(${libname_upper}_INCLUDE_DIRS "${CMAKE_CURRENT_BINARY_DIR}/lib${libname_lower}/include"
+					  "${CMAKE_CURRENT_SOURCE_DIR}/lib${libname_lower}/include")
+	add_subdirectory(lib${libname_lower})
+endmacro()
+
+function(pv_qt6_wrap_ui outfiles include_dir)
+	set(options)
+	set(oneValueArgs)
+	set(multiValueArgs OPTIONS)
+
+	cmake_parse_arguments(_WRAP_UI "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+	set(ui_files ${_WRAP_UI_UNPARSED_ARGUMENTS})
+	set(ui_options ${_WRAP_UI_OPTIONS})
+
+	foreach(it ${ui_files})
+		get_filename_component(outfile ${it} NAME_WE)
+		get_filename_component(infile ${it} ABSOLUTE)
+		set(outfile ${CMAKE_CURRENT_BINARY_DIR}/../include/${include_dir}/ui_${outfile}.h)
+		add_custom_command(OUTPUT ${outfile}
+			COMMAND Qt6::uic
+			ARGS ${ui_options} -o ${outfile} ${infile}
+			MAIN_DEPENDENCY ${infile} VERBATIM)
+		list(APPEND ${outfiles} ${outfile})
+	endforeach()
+	set(${outfiles} ${${outfiles}} PARENT_SCOPE)
+endfunction()
+
+macro(declare_customer_cap cap default_dev default_customer)
+	# Default value
+	if (NOT DEFINED ${cap})
+		if (SQUEY_DEVELOPER_MODE)
+			set(${cap} ${default_dev})
+		else()
+			set(${cap} ${default_customer})
+		endif()
+	endif()
+endmacro()
+
+###############################################################################
+# Function to define a test
+#
+# Syntax to use it : add_squey_compile_test(binary_name LINKS libs_to_link FILES files_to_compile)
+#
+# Compilation for tests declared with this function arre added to the testsuite
+# dependency
+###############################################################################
+function(add_squey_compile_test test_exe)
+	# Define all kinds of arguments
+	set(options)
+	set(oneValueArgs)
+	set(multiValueArgs FILES LINKS)
+
+	# Call cmake_parse_arguments to extract information in variables
+	cmake_parse_arguments(_WRAP_TEST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+	set(args ${_WRAP_TEST_UNPARSED_ARGUMENTS})
+	set(files ${_WRAP_TEST_FILES})
+	set(links ${_WRAP_TEST_LINKS})
+
+	# Tests exercise the same path handling as the application, so they need the
+	# same UTF-8 active code page (see utf8.manifest): without it, a test whose
+	# paths hold a non-ASCII character silently reads and writes elsewhere.
+	if (WIN32)
+		list(APPEND files "${CMAKE_SOURCE_DIR}/utf8_manifest.rc")
+	endif()
+
+	# Now, we have all arguments, compile the executable
+	add_executable(SQUEY_TEST_${test_exe} EXCLUDE_FROM_ALL ${files})
+	target_compile_definitions(SQUEY_TEST_${test_exe} PRIVATE TEST_FOLDER=\"${TESTS_FILES_DIR}\" TESTS_FILES_DIR=\"${TESTS_FILES_DIR}\" TESTS_SOURCE_DIR=\"${TESTS_SOURCE_DIR}\")
+	# Link library with it
+	target_link_libraries(SQUEY_TEST_${test_exe} ${links})
+	# All of this will be done on the already defined squey_testsuite target
+	add_dependencies(squey_testsuite SQUEY_TEST_${test_exe})
+	file(RELATIVE_PATH REL_TEST_DIR ${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+	# OPTIONAL because the test executables are EXCLUDE_FROM_ALL: a build that only
+	# runs the default target legitimately leaves them unbuilt, and the install must
+	# not fail over it. When they are built, they are installed as usual.
+	install(TARGETS SQUEY_TEST_${test_exe} DESTINATION "tests/${REL_TEST_DIR}" COMPONENT tests OPTIONAL)
+endfunction()
+
+# ctest only falls back to its own 1500 s default when DartConfiguration.tcl sits next
+# to CTestTestfile.cmake, and the CI runs the testsuite from an artifact that does not
+# carry that file. A test hanging there kept the whole job running until the CI killed
+# it after its timeout, discarding the test output -- and with it any clue as to what hung.
+# The slowest test observed on the Windows CI takes about two minutes.
+set(SQUEY_TEST_TIMEOUT 600 CACHE STRING "Timeout in seconds after which a test is killed and reported as failed")
+
+function(add_squey_test test_exe test_name)
+	add_test(SQUEY_TEST_${test_exe} SQUEY_TEST_${test_name}${CMAKE_EXECUTABLE_SUFFIX} ${ARGN})
+	set_tests_properties(SQUEY_TEST_${test_exe} PROPERTIES TIMEOUT ${SQUEY_TEST_TIMEOUT})
+endfunction()
+
+function(add_bench bench_name)
+	#add_squey_compile_test(SQUEY_BENCH_${bench_name} ${ARGN})
+	#set_target_properties(SQUEY_BENCH_${bench_name} PROPERTIES COMPILE_FLAGS "-DSQUEY_BENCH ${PROGRAM_COMPILE_FLAGS}")
+	#add_squey_test(SQUEY_BENCH_${bench_name} ${CMAKE_SOURCE_DIR}/scripts/run_bench.py ${CMAKE_CURRENT_BINARY_DIR}/SQUEY_BENCH_${bench_name})
+endfunction()
+
+function(strcasecmp res str1 str2)
+	string(TOLOWER ${str1} str1_lower)
+	string(TOLOWER ${str2} str2_lower)
+	string(COMPARE EQUAL str1_lower str2_lower res)
+endfunction()
+
+###############################################################################
+# Speed up from-scratch compilation of a target via unity (jumbo) builds and
+# precompiled headers. Both are controlled by the SQUEY_UNITY_BUILD / SQUEY_PCH
+# options so they can be toggled off globally if needed.
+#
+# Syntax: squey_speedup_compilation(<target> [QT])
+#   QT : also precompile the heaviest Qt headers (only pass it for targets that
+#        actually use Qt, otherwise the PCH would fail to compile).
+###############################################################################
+function(squey_speedup_compilation target)
+	cmake_parse_arguments(_SPD "QT" "" "SKIP_UNITY" ${ARGN})
+
+	if (SQUEY_UNITY_BUILD)
+		set_target_properties(${target} PROPERTIES
+			UNITY_BUILD ON
+			UNITY_BUILD_MODE BATCH
+			UNITY_BUILD_BATCH_SIZE ${SQUEY_UNITY_BUILD_BATCH_SIZE})
+
+		# Bundled third-party code and generated uic/rcc sources are prone to ODR
+		# clashes (duplicated static tables, generated symbols such as the
+		# qInitResources helpers) when merged, so keep them out of the jumbo
+		# units. moc sources are the exception: merging them is safe (it is what
+		# Qt's own mocs_compilation.cpp does) and there are many small ones, so
+		# folding them in noticeably cuts the translation-unit count.
+		get_target_property(_srcs ${target} SOURCES)
+		foreach (_src ${_srcs})
+			get_source_file_property(_generated "${_src}" GENERATED)
+			if ((_generated AND NOT "${_src}" MATCHES "moc_") OR "${_src}" MATCHES "third_party/")
+				set_source_files_properties("${_src}"
+					PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+			endif()
+		endforeach()
+
+		# Files listed by the caller define file-local debug macros (dbg,
+		# print_*) or duplicated global helpers (__print_*) that leak into or
+		# clash with the rest of a jumbo unit; compile them on their own.
+		foreach (_src ${_SPD_SKIP_UNITY})
+			set_source_files_properties("${_src}"
+				PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+		endforeach()
+	endif()
+
+	# Each target compiles its own PCH: the Qt headers bake in per-target defines
+	# (e.g. QT_NO_OPENGL, set for some libraries but not the OpenGL-using views),
+	# so a shared PCH (REUSE_FROM) is rejected as invalid for the mismatching
+	# targets -- silently under -Winvalid-pch, fatally under -Werror.
+	if (SQUEY_PCH)
+		# Clang records the mtime of cmake_pch.hxx.cxx inside the PCH and refuses
+		# it when they diverge. CMake rewrites that file on every configure, while
+		# the build cache restores a PCH built from an earlier one -- so any
+		# CMakeLists change turned the next cached build into "file has been
+		# modified since the precompiled header was built". Compare contents only,
+		# as ccache does for the same reason.
+		if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+			target_compile_options(${target} PRIVATE "SHELL:-Xclang -fno-pch-timestamp")
+		endif()
+		target_precompile_headers(${target} PRIVATE
+			<algorithm> <functional> <memory> <string> <vector>
+			<unordered_map> <map> <cstdint>)
+		if (_SPD_QT)
+			target_precompile_headers(${target} PRIVATE
+				<QString> <QObject> <QVariant> <QWidget>)
+		endif()
+	endif()
+endfunction()
+
+# GCC version
+macro(GET_GCC_VERSION major minor)
+	execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpversion
+                    OUTPUT_VARIABLE GCC_VERSION)
+	string(REGEX MATCHALL "[0-9]+" GCC_VERSION_COMPONENTS ${GCC_VERSION})
+	list(GET GCC_VERSION_COMPONENTS 0 ${major})
+	list(GET GCC_VERSION_COMPONENTS 1 ${minor})
+endmacro()
